@@ -127,7 +127,10 @@ class PolyConv(nn.Module):
     def sign_edges(self, edges):
         src = edges.src['feat']
         dst = edges.dst['feat']
-        score = self.relation_aware(src, dst)
+        # change
+        # score = self.relation_aware(src, dst)
+        output1, output2 = self.relation_aware(src, dst)
+        score = self.relation_aware.compute_score(output1, output2)
         return {'sign':torch.sign(score)}
 
     def judge_edges(self, edges):
@@ -168,6 +171,46 @@ class RelationAware(nn.Module):
         score = self.tanh(score)
         return score
 
+class MyRelationAwareSiameze(nn.Module):
+    def __init__(self, input_dim, hidden_dim, dropout):
+        super().__init__()
+        self.fc1 = nn.Linear(input_dim, hidden_dim)
+        self.fc2 = nn.Linear(hidden_dim, hidden_dim)
+        # self.fc3 = nn.Linear(hidden_dim, hidden_dim)
+        self.dropout1 = nn.Dropout(dropout)
+        self.dropout2 = nn.Dropout(dropout)
+        # self.dropout3 = nn.Dropout(dropout)
+    
+    def forward_once(self, x):
+        x = F.relu(self.fc1(x))
+        x = self.dropout1(x)
+        x = F.relu(self.fc2(x))
+        x = self.dropout2(x)
+        # x = F.relu(self.fc3(x))
+        # x = self.dropout3(x)
+        return x
+    
+    def forward(self, input1, input2):
+        output1 = self.forward_once(input1)
+        output2 = self.forward_once(input2)
+        return output1, output2
+    
+    def compute_score(self, output1, output2):
+        # return F.pairwise_distance(output1, output2) # Euclidean distance
+        # return 1 - F.cosine_similarity(output1, output2) # Cosine similarity
+        return torch.sum(torch.abs(output1 - output2), dim=1) # Manhattan Distance (L1 norm)
+        # return 1 - torch.corrcoef(output1, output2) # Pearson correlation
+    
+class ContrastiveLoss(nn.Module):
+    def __init__(self, margin=1.0):
+        super().__init__()
+        self.margin = margin
+        
+    def forward(self, distance, label):
+        loss_contrastive = torch.mean((1-label) * torch.pow(distance, 2) +
+                                      (label) * torch.pow(torch.clamp(self.margin - distance, min=0.0), 2))
+        return loss_contrastive
+
 
 class MultiRelationSplitGNNLayer(nn.Module):
     def __init__(self, input_dim, output_dim, dataset, dropout, thetas, K, if_sum=False):
@@ -178,7 +221,9 @@ class MultiRelationSplitGNNLayer(nn.Module):
         self.n_relation = len(self.relation)
         self.liner = nn.Linear(self.n_relation*output_dim*3, output_dim)
         self.linear = nn.Linear(input_dim, output_dim)
-        self.relation_aware = RelationAware(input_dim, output_dim, dropout)
+        # change
+        # self.relation_aware = RelationAware(input_dim, output_dim, dropout)
+        self.relation_aware = MyRelationAwareSiameze(input_dim, output_dim, dropout)
         self.minelayers = nn.ModuleDict()
         self.dropout = nn.Dropout(dropout)
         for e in self.relation:
@@ -217,13 +262,19 @@ class MultiRelationSplitGNNLayer(nn.Module):
             edge_train_score = edges_score[edge_train_mask]
             # hinge loss
             edge_diff_loss = hinge_loss(edge_train_label[index], edge_train_score[index])
+            # change
+            # cl = ContrastiveLoss(margin=1)
+            # edge_diff_loss = cl.forward(edge_train_label[index], edge_train_score[index])
 
             return agg_h, edge_diff_loss
             
     def score_edges(self, edges):
         src = edges.src['feat']
         dst = edges.dst['feat']
-        score = self.relation_aware(src, dst)
+        # change
+        # score = self.relation_aware(src, dst)
+        output1, output2 = self.relation_aware(src, dst)
+        score = self.relation_aware.compute_score(output1, output2)
         return {'score':score}
 
 
@@ -231,6 +282,7 @@ class SplitGNN(nn.Module):
     def __init__(self, args, g):
         super().__init__()
         self.input_dim = g.nodes['r'].data['feature'].shape[1]  # nodes['company'] for FDCompCN
+        # self.input_dim = g.nodes['company'].data['feature'].shape[1]  # nodes['company'] for FDCompCN
         self.intra_dim = args.intra_dim
         self.gamma = args.gamma
         self.C = args.C

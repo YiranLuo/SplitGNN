@@ -32,6 +32,7 @@ def generate_edges_labels(edges, labels, train_idx):
 
 if __name__ == '__main__':
     dataset_path = '../data/'
+    # dataset_path = r'..\data\'
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str, default='amazon')
     args = parser.parse_args()

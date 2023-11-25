@@ -14,6 +14,10 @@ warnings.filterwarnings('ignore')
 random.seed(42)
 
 if __name__ == '__main__':
+    print("***************************")
+    print(dgl.__version__)
+    print(torch.cuda.device_count())
+    print("***************************")
     args = parse_args()
     setup_seed(args.seed)
     device = torch.device(args.cuda)
